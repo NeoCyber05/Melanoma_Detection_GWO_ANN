@@ -29,7 +29,7 @@ Phân loại ung thư da Melanoma sử dụng **Grey Wolf Optimizer + Artificial
 Input(100) → Dense(64) → Sigmoid → Dropout(0.3) → Dense(2) → Output
 ```
 
-## Chạy
+## Running
 
 ```bash
 # Cài đặt
