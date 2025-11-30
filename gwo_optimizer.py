@@ -1,5 +1,5 @@
 """
-Grey Wolf Optimizer (GWO) - Thuật toán tối ưu hóa bầy sói xám
+Grey Wolf Optimizer (GWO)
 """
 
 import numpy as np
@@ -17,7 +17,6 @@ class GreyWolfOptimizer:
         self.max_iter = max_iter
         self.verbose = verbose
         
-        # Bounds
         if np.isscalar(lower_bound):
             self.lower_bound = lower_bound * np.ones(dim)
         else:
@@ -28,7 +27,6 @@ class GreyWolfOptimizer:
         else:
             self.upper_bound = np.array(upper_bound)
         
-        # Alpha, Beta, Delta (top 3 solutions)
         self.alpha_pos = None
         self.alpha_score = float('inf')
         self.beta_pos = None
@@ -53,12 +51,10 @@ class GreyWolfOptimizer:
         iterator = tqdm(range(self.max_iter), desc="GWO") if self.verbose else range(self.max_iter)
         
         for t in iterator:
-            # Đánh giá fitness
             for i in range(self.population_size):
                 population[i] = self._clip(population[i])
                 fitness = self.objective_func(population[i])
                 
-                # Cập nhật alpha, beta, delta
                 if fitness < self.alpha_score:
                     self.delta_score, self.delta_pos = self.beta_score, self.beta_pos.copy() if self.beta_pos is not None else None
                     self.beta_score, self.beta_pos = self.alpha_score, self.alpha_pos.copy() if self.alpha_pos is not None else None
@@ -69,30 +65,24 @@ class GreyWolfOptimizer:
                 elif fitness < self.delta_score:
                     self.delta_score, self.delta_pos = fitness, population[i].copy()
             
-            # Hệ số a giảm từ 2 về 0
             a = 2 - t * (2 / self.max_iter)
             
-            # Cập nhật vị trí các sói
             for i in range(self.population_size):
-                # Theo alpha
                 r1, r2 = np.random.random(self.dim), np.random.random(self.dim)
                 A1, C1 = 2 * a * r1 - a, 2 * r2
                 D_alpha = np.abs(C1 * self.alpha_pos - population[i])
                 X1 = self.alpha_pos - A1 * D_alpha
                 
-                # Theo beta
                 r1, r2 = np.random.random(self.dim), np.random.random(self.dim)
                 A2, C2 = 2 * a * r1 - a, 2 * r2
                 D_beta = np.abs(C2 * self.beta_pos - population[i])
                 X2 = self.beta_pos - A2 * D_beta
                 
-                # Theo delta
                 r1, r2 = np.random.random(self.dim), np.random.random(self.dim)
                 A3, C3 = 2 * a * r1 - a, 2 * r2
                 D_delta = np.abs(C3 * self.delta_pos - population[i])
                 X3 = self.delta_pos - A3 * D_delta
                 
-                # Vị trí mới = trung bình
                 population[i] = (X1 + X2 + X3) / 3
             
             self.convergence_curve.append(self.alpha_score)
@@ -106,10 +96,20 @@ class GreyWolfOptimizer:
         return np.array(self.convergence_curve)
 
 
-def create_objective_function(model, X, y, device='cpu'):
-    """Tạo hàm objective (MSE) cho GWO"""
-    X_tensor = torch.FloatTensor(X).to(device)
-    y_tensor = torch.LongTensor(y).to(device)
+def create_objective_function(model, X_train, y_train, X_val=None, y_val=None, device='cpu'):
+    """
+    Tạo hàm objective cho GWO
+    Nếu có validation set → dùng val để đánh giá (tránh overfitting)
+    """
+    X_t = torch.FloatTensor(X_train).to(device)
+    y_t = torch.LongTensor(y_train).to(device)
+    
+    # Dùng validation nếu có
+    if X_val is not None and y_val is not None:
+        X_eval = torch.FloatTensor(X_val).to(device)
+        y_eval = torch.LongTensor(y_val).to(device)
+    else:
+        X_eval, y_eval = X_t, y_t
     
     def objective(weights):
         model.set_weights_from_vector(weights)
@@ -117,14 +117,12 @@ def create_objective_function(model, X, y, device='cpu'):
         model.eval()
         
         with torch.no_grad():
-            outputs = model(X_tensor)
+            outputs = model(X_eval)
             probs = torch.softmax(outputs, dim=1)
             
-            # One-hot
-            y_onehot = torch.zeros(len(y_tensor), 2).to(device)
-            y_onehot.scatter_(1, y_tensor.unsqueeze(1), 1)
+            y_onehot = torch.zeros(len(y_eval), 2).to(device)
+            y_onehot.scatter_(1, y_eval.unsqueeze(1), 1)
             
-            # MSE = 1/2 * mean((pred - true)^2)
             mse = 0.5 * torch.mean((probs - y_onehot) ** 2).item()
         
         return mse
@@ -133,10 +131,9 @@ def create_objective_function(model, X, y, device='cpu'):
 
 
 if __name__ == "__main__":
-    # Test nhanh với sphere function
     def sphere(x):
         return np.sum(x ** 2)
     
     gwo = GreyWolfOptimizer(sphere, dim=10, population_size=20, max_iter=30)
     best_pos, best_score = gwo.optimize()
-    print(f"Best score: {best_score:.6f} (expected: 0)")
+    print(f"Best score: {best_score:.6f}")
